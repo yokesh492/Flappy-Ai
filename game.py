@@ -158,7 +158,7 @@ class Base:#third object
 
 
 # to draw the window with bG and bird
-def draw_win(win,bird,pipes,base,score):
+def draw_win(win,birds,pipes,base,score):
     win.blit(BG,(0,0))
     for pipe in pipes:
         pipe.draw(win)
@@ -167,11 +167,24 @@ def draw_win(win,bird,pipes,base,score):
     win.blit(text,(Win_width -10 - text.get_width(),10))
 
     base.draw(win)
-    bird.draw(win)
+    for bird in birds:
+        bird.draw(win)
     pygame.display.update()
 
-def main():
-    bird = Bird(230,350)
+def main(genomes,config):#fitness function
+    birds = []
+    nets = []
+    ge = []
+
+    for _,g in genomes:
+        net = neat.nn.FeedForwardNetwork.create(g,config)#creating the neural network
+        nets.append(net)
+        birds.append(Bird(230,350))
+        g.fitness = 0 #initlaizing the fitness score
+        ge.append(g)
+
+
+
     base = Base(730)
     pipes = [Pipe(600)]
     win = pygame.display.set_mode((Win_width,Win_Heigth))
@@ -185,38 +198,82 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
+                pygame.quit()
+                quit()
+
+        pipe_id = 0
+        if len(birds) > 0:
+            if len(pipes) > 0 and birds[0].x > pipes[0].x + pipes[0].TOP_PIPE.get_width():
+                pipe_id = 1
+        else :
+            run = False
+            break
+        
+        for x,bird in enumerate(birds):
+            ge[x].fitness += 0.1 #giving littel fitness to move 
+            bird.move()
+
+            output = nets[x].activate((bird.y , abs(bird.y - pipes[pipe_id].height) , abs(bird.y - pipes[pipe_id].bottom)))
+
+            if output[0] > 0.5:
+                bird.jump()
         
         add_pipe = False
         rem = [] # list of removing pipe
         
         for pipe in pipes:
-            if pipe.collide(bird):
-                pass
+            for x,bird in enumerate(birds):
+                if pipe.collide(bird):
+                    ge[x].fitness -= 1 #reduce the fitness score than other birds
+                    birds.pop(x)
+                    nets.pop(x)
+                    ge.pop(x)
+
+                if not pipe.passed and pipe.x < bird.x: # if bird pass the pipe means to create the another pipe
+                    pipe.passed = True
+                    add_pipe =True
 
             if pipe.x + pipe.TOP_PIPE.get_width() < 0: #pipe cross the window it should be removed
                 rem.append(pipe)
-            
-            if not pipe.passed and pipe.x < bird.x: # if bird pass the pipe means to create the another pipe
-                pipe.passed = True
-                add_pipe =True
 
             pipe.move()
         if add_pipe: # adding the pipe instantly
+            for g in ge:#if the birds passes , increasing the fitness score
+                g.fitness += 5
             score += 1
             pipes.append(Pipe(600))
         
         for r in rem: # removing the pipe from the list after it went from the screen
             pipes.remove(r)
-        
-        if bird.y + bird.img.get_height() >= 730:
-            pass
+
+        for x,bird in enumerate(birds):
+            if bird.y + bird.img.get_height() >= 730 or bird.y < 0:#if bird hits the ground , and above the screen then remove
+                birds.pop(x)
+                nets.pop(x)
+                ge.pop(x)
         #bird.move()
         base.move()
-        draw_win(win,bird,pipes,base,score)
-    pygame.quit()
-    quit()
-main()
+        draw_win(win,birds,pipes,base,score)
 
+
+def run(configpath):# creating configuration for the fitnessfunction
+    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         configpath)
+    p = neat.Population(config)
+
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats) 
+    winner = p.run(main,50)
+
+    print('\nBest genome:\n{!s}'.format(winner))
+
+
+if __name__ == "__main__":
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir,"config_NEAT.txt")
+    run(config_path)
 
 
 
